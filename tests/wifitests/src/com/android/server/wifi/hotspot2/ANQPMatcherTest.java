@@ -33,6 +33,7 @@ import com.android.server.wifi.hotspot2.anqp.RoamingConsortiumElement;
 import com.android.server.wifi.hotspot2.anqp.ThreeGPPNetworkElement;
 import com.android.server.wifi.hotspot2.anqp.eap.AuthParam;
 import com.android.server.wifi.hotspot2.anqp.eap.EAPMethod;
+import com.android.server.wifi.hotspot2.anqp.eap.InnerAuthEAP;
 import com.android.server.wifi.hotspot2.anqp.eap.NonEAPInnerAuth;
 
 import org.junit.Test;
@@ -101,7 +102,7 @@ public class ANQPMatcherTest {
      */
     @Test
     public void matchRoamingConsortiumWithNullElement() throws Exception {
-        assertFalse(ANQPMatcher.matchRoamingConsortium(null, new long[0], false));
+        assertFalse(ANQPMatcher.matchRoamingConsortium(null, new long[0]));
     }
 
     /**
@@ -115,22 +116,23 @@ public class ANQPMatcherTest {
         long oi = 0x1234L;
         RoamingConsortiumElement element =
                 new RoamingConsortiumElement(Arrays.asList(new Long[] {oi}));
-        assertTrue(ANQPMatcher.matchRoamingConsortium(element, new long[] {oi}, false));
+        assertTrue(ANQPMatcher.matchRoamingConsortium(element, new long[] {oi}));
     }
 
     /**
-     * Verify that no match will be returned when matching a null NAI Realm
+     * Verify that an indeterminate match will be returned when matching a null NAI Realm
      * ANQP element.
      *
      * @throws Exception
      */
     @Test
     public void matchNAIRealmWithNullElement() throws Exception {
-        assertFalse(ANQPMatcher.matchNAIRealm(null, "test.com"));
+        assertEquals(AuthMatch.INDETERMINATE, ANQPMatcher.matchNAIRealm(null, "test.com",
+                EAPConstants.EAP_TLS, new InnerAuthEAP(EAPConstants.EAP_TTLS)));
     }
 
     /**
-     * Verify that no match will be returned when matching a NAI Realm
+     * Verify that an indeterminate match will be returned when matching a NAI Realm
      * ANQP element contained no NAI realm data.
      *
      * @throws Exception
@@ -138,7 +140,8 @@ public class ANQPMatcherTest {
     @Test
     public void matchNAIRealmWithEmtpyRealmData() throws Exception {
         NAIRealmElement element = new NAIRealmElement(new ArrayList<NAIRealmData>());
-        assertFalse(ANQPMatcher.matchNAIRealm(element, "test.com"));
+        assertEquals(AuthMatch.INDETERMINATE, ANQPMatcher.matchNAIRealm(element, "test.com",
+                EAPConstants.EAP_TLS, null));
     }
 
     /**
@@ -154,11 +157,38 @@ public class ANQPMatcherTest {
                 Arrays.asList(new String[] {realm}), new ArrayList<EAPMethod>());
         NAIRealmElement element = new NAIRealmElement(
                 Arrays.asList(new NAIRealmData[] {realmData}));
-        assertTrue(ANQPMatcher.matchNAIRealm(element, realm));
+        assertEquals(AuthMatch.REALM, ANQPMatcher.matchNAIRealm(element, realm,
+                EAPConstants.EAP_TLS, null));
     }
 
     /**
-     * Verify that a realm match will be returned when the specified realm and EAP
+     * Verify that method match will be returned when the specified EAP
+     * method only matches a eap method in the NAI Realm ANQP element if the element does not have
+     * auth params.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void matchNAIRealmWithMethodMatch() throws Exception {
+        // Test data.
+        String providerRealm = "test.com";
+        String anqpRealm = "test2.com";
+        NonEAPInnerAuth authParam = new NonEAPInnerAuth(NonEAPInnerAuth.AUTH_TYPE_MSCHAP);
+        int eapMethodID = EAPConstants.EAP_TLS;
+
+        // Setup NAI Realm element that has EAP method and no auth params.
+        EAPMethod method = new EAPMethod(eapMethodID, new HashMap<Integer, Set<AuthParam>>());
+        NAIRealmData realmData = new NAIRealmData(
+                Arrays.asList(new String[]{anqpRealm}), Arrays.asList(new EAPMethod[]{method}));
+        NAIRealmElement element = new NAIRealmElement(
+                Arrays.asList(new NAIRealmData[]{realmData}));
+
+        assertEquals(AuthMatch.METHOD,
+                ANQPMatcher.matchNAIRealm(element, providerRealm, eapMethodID, authParam));
+    }
+
+    /**
+     * Verify that a realm and method match will be returned when the specified realm and EAP
      * method matches a realm in the NAI Realm ANQP element.
      *
      * @throws Exception
@@ -176,11 +206,12 @@ public class ANQPMatcherTest {
         NAIRealmElement element = new NAIRealmElement(
                 Arrays.asList(new NAIRealmData[] {realmData}));
 
-        assertTrue(ANQPMatcher.matchNAIRealm(element, realm));
+        assertEquals(AuthMatch.REALM | AuthMatch.METHOD,
+                ANQPMatcher.matchNAIRealm(element, realm, eapMethodID, null));
     }
 
     /**
-     * Verify that a realm match will be returned when the specified realm, EAP
+     * Verify that an exact match will be returned when the specified realm, EAP
      * method, and the authentication parameter matches a realm with the associated EAP method and
      * authentication parameter in the NAI Realm ANQP element.
      *
@@ -204,11 +235,12 @@ public class ANQPMatcherTest {
         NAIRealmElement element = new NAIRealmElement(
                 Arrays.asList(new NAIRealmData[] {realmData}));
 
-        assertTrue(ANQPMatcher.matchNAIRealm(element, realm));
+        assertEquals(AuthMatch.EXACT,
+                ANQPMatcher.matchNAIRealm(element, realm, eapMethodID, authParam));
     }
 
     /**
-     * Verify that a realm match will be returned when the specified EAP method
+     * Verify that a mismatch (AuthMatch.NONE) will be returned when the specified EAP method
      * doesn't match with the corresponding EAP method in the NAI Realm ANQP element.
      *
      * @throws Exception
@@ -231,11 +263,12 @@ public class ANQPMatcherTest {
         NAIRealmElement element = new NAIRealmElement(
                 Arrays.asList(new NAIRealmData[] {realmData}));
 
-        assertTrue(ANQPMatcher.matchNAIRealm(element, realm));
+        assertEquals(AuthMatch.NONE,
+                ANQPMatcher.matchNAIRealm(element, realm, EAPConstants.EAP_TLS, null));
     }
 
     /**
-     * Verify that a realm match will be returned when the specified authentication
+     * Verify that a mismatch (AuthMatch.NONE) will be returned when the specified authentication
      * parameter doesn't match with the corresponding authentication parameter in the NAI Realm
      * ANQP element.
      *
@@ -259,8 +292,10 @@ public class ANQPMatcherTest {
         NAIRealmElement element = new NAIRealmElement(
                 Arrays.asList(new NAIRealmData[] {realmData}));
 
-        // Mismatch in authentication type which we ignore.
-        assertTrue(ANQPMatcher.matchNAIRealm(element, realm));
+        // Mismatch in authentication type.
+        assertEquals(AuthMatch.NONE,
+                ANQPMatcher.matchNAIRealm(element, realm, EAPConstants.EAP_TTLS,
+                        new NonEAPInnerAuth(NonEAPInnerAuth.AUTH_TYPE_PAP)));
     }
 
     /**
@@ -422,65 +457,5 @@ public class ANQPMatcherTest {
 
         assertEquals(-1,
                 ANQPMatcher.getCarrierEapMethodFromMatchingNAIRealm(TEST_3GPP_FQDN, element));
-    }
-
-    /**
-     * Verify that match is found when HomeOI contains some of the RCOIs advertised by an AP marked
-     * as not required.
-     *
-     * @throws Exception
-     */
-    @Test
-    public void matchAnyHomeOi() throws Exception {
-        long[] providerOis = new long[] {0x1234L, 0x5678L, 0xabcdL};
-        Long[] anqpOis = new Long[] {0x1234L, 0x5678L, 0xdeadL, 0xf0cdL};
-        RoamingConsortiumElement element =
-                new RoamingConsortiumElement(Arrays.asList(anqpOis));
-        assertTrue(ANQPMatcher.matchRoamingConsortium(element, providerOis, false));
-    }
-
-    /**
-     * Verify that no match is found when HomeOI does not contain any of the RCOIs advertised by an
-     * AP marked as not required.
-     *
-     * @throws Exception
-     */
-    @Test
-    public void matchAnyHomeOiNegative() throws Exception {
-        long[] providerOis = new long[] {0x1234L, 0x5678L, 0xabcdL};
-        Long[] anqpOis = new Long[] {0xabc2L, 0x1232L};
-        RoamingConsortiumElement element =
-                new RoamingConsortiumElement(Arrays.asList(anqpOis));
-        assertFalse(ANQPMatcher.matchRoamingConsortium(element, providerOis, false));
-    }
-
-    /**
-     * Verify that match is found when HomeOI contains all of the RCOIs advertised by an AP marked
-     * as required.
-     *
-     * @throws Exception
-     */
-    @Test
-    public void matchAllHomeOi() throws Exception {
-        long[] providerOis = new long[] {0x1234L, 0x5678L, 0xabcdL};
-        Long[] anqpOis = new Long[] {0x1234L, 0x5678L, 0xabcdL, 0xdeadL, 0xf0cdL};
-        RoamingConsortiumElement element =
-                new RoamingConsortiumElement(Arrays.asList(anqpOis));
-        assertTrue(ANQPMatcher.matchRoamingConsortium(element, providerOis, true));
-    }
-
-    /**
-     * Verify that match is not found when HomeOI does not contain all of the RCOIs advertised by an
-     * AP marked as required.
-     *
-     * @throws Exception
-     */
-    @Test
-    public void matchAllHomeOiNegative() throws Exception {
-        long[] providerOis = new long[] {0x1234L, 0x5678L, 0xabcdL};
-        Long[] anqpOis = new Long[] {0x1234L, 0x5678L, 0xdeadL, 0xf0cdL};
-        RoamingConsortiumElement element =
-                new RoamingConsortiumElement(Arrays.asList(anqpOis));
-        assertFalse(ANQPMatcher.matchRoamingConsortium(element, providerOis, true));
     }
 }

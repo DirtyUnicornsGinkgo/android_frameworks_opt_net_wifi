@@ -217,7 +217,6 @@ public class PasspointManager {
         public void setProviders(List<PasspointProvider> providers) {
             mProviders.clear();
             for (PasspointProvider provider : providers) {
-                provider.enableVerboseLogging(mVerboseLoggingEnabled ? 1 : 0);
                 mProviders.put(provider.getConfig().getHomeSp().getFqdn(), provider);
                 if (provider.getPackageName() != null) {
                     startTrackingAppOpsChange(provider.getPackageName(),
@@ -378,9 +377,6 @@ public class PasspointManager {
     public void enableVerboseLogging(int verbose) {
         mVerboseLoggingEnabled = (verbose > 0) ? true : false;
         mPasspointProvisioner.enableVerboseLogging(verbose);
-        for (PasspointProvider provider : mProviders.values()) {
-            provider.enableVerboseLogging(verbose);
-        }
     }
 
     /**
@@ -437,7 +433,6 @@ public class PasspointManager {
             mProviders.get(config.getHomeSp().getFqdn()).uninstallCertsAndKeys();
             mProviders.remove(config.getHomeSp().getFqdn());
         }
-        newProvider.enableVerboseLogging(mVerboseLoggingEnabled ? 1 : 0);
         mProviders.put(config.getHomeSp().getFqdn(), newProvider);
         mWifiConfigManager.saveToStore(true /* forceWrite */);
         if (newProvider.getPackageName() != null) {
@@ -1170,7 +1165,6 @@ public class PasspointManager {
                 Arrays.asList(enterpriseConfig.getCaCertificateAlias()),
                 enterpriseConfig.getClientCertificateAlias(),
                 enterpriseConfig.getClientCertificateAlias(), null, false, false);
-        provider.enableVerboseLogging(mVerboseLoggingEnabled ? 1 : 0);
         mProviders.put(passpointConfig.getHomeSp().getFqdn(), provider);
         return true;
     }
